@@ -124,7 +124,6 @@ int fat_getattr(const char *path, struct stat *stat) {
 	return 0;
 }
 
-
 int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *info) {
 	if (strcmp(path, "/") != 0)
 		return -ENOENT;
@@ -147,10 +146,30 @@ int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	}
 	return 0;
 }
-
-
-int fat_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *info) {
+int fat_open (const char *path, struct fuse_file_info *info) {
+	file_entry file;
+	if (get_file_entry(path, &file) != 0) {
+		return -ENOENT;
+	}
 	return 0;
+}
+
+int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct fuse_file_info *info) {
+	file_entry file;
+	size_t size = 0;
+	if (get_file_entry(path, &file) != 0) {
+		return -ENOENT;
+	}
+	if (offset < file.size) {
+		if (offset + buf_size > file.size) {
+			size = file.size - offset;
+		} else {
+			size = buf_size;
+		}
+		lseek(image, data_offset + file.cluster * CLUSTER_SIZE, SEEK_SET);
+		read(image, buf, size);
+	}
+	return size;
 }
 
 static struct fuse_operations fat_oper = {
