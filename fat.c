@@ -51,7 +51,7 @@ int is_cluster_free(cluster_t cluster) {
 
 cluster_t find_empty_cluster_after(cluster_t cluster) {
 	cluster_t current = cluster;
-	while (!is_cluster_free(cluster) && cluster < CLUSTER_COUNT) {
+	while (cluster < CLUSTER_COUNT && !is_cluster_free(cluster)) {
 		cluster++;
 	}
 	return cluster == CLUSTER_COUNT ? END_OF_FILE : cluster;
