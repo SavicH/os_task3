@@ -38,6 +38,29 @@ int image;
 off_t data_offset;
 int entries_count;
 
+cluster_t get_next_cluster(cluster_t cluster) {
+	lseek(image, sizeof(cluster_t) * cluster, SEEK_SET);
+	cluster_t next;
+	read(image, &next, sizeof(cluster_t));
+	return next;
+}
+
+int is_cluster_free(cluster_t cluster) {
+	return get_next_cluster(cluster) == 0 ? 1 : 0;
+}
+
+cluster_t find_empty_cluster_after(cluster_t cluster) {
+	cluster_t current = cluster;
+	while (!is_cluster_free(cluster) && cluster < CLUSTER_COUNT) {
+		cluster++;
+	}
+	return cluster == CLUSTER_COUNT ? END_OF_FILE : cluster;
+}
+
+cluster_t find_empty_cluster() {
+	return find_empty_cluster_after(0);
+}
+
 char* extract_folder(const char *path) {
 	int length = strlen(path);
 	int i = length - 1;
@@ -131,19 +154,25 @@ int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
-	lseek(image, data_offset, SEEK_SET);
+	file_entry folder;
+	get_file_entry(path, &folder);
+	cluster_t cluster = folder.cluster;
+
 	int i;
 	file_entry tmp;
 	char *filename = malloc(NAME_LENGTH);
-	for (i = 0; i<entries_count; i++) {
-		read(image, &tmp, sizeof(file_entry));
-		if (tmp.mode != 0) {
-			memcpy(filename, tmp.name, NAME_LENGTH);
-			filler(buf, filename, NULL, 0);
-		} else {
-			break;
+
+	do {
+		lseek(image, data_offset, SEEK_SET);
+		for (i = 0; i<entries_count; i++) {
+			read(image, &tmp, sizeof(file_entry));
+			if (strlen(tmp.name) != 0) {
+				memcpy(filename, tmp.name, NAME_LENGTH);
+				filler(buf, filename, NULL, 0);
+			} 
 		}
-	}
+		cluster = get_next_cluster(cluster);
+	} while (cluster != END_OF_FILE);
 	return 0;
 }
 int fat_open (const char *path, struct fuse_file_info *info) {
@@ -170,7 +199,7 @@ int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct 
 		read(image, buf, size);
 	}
 	return size;
-}
+} 
 
 static struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
