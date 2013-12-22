@@ -60,18 +60,26 @@ cluster_t find_empty_cluster() {
 	return find_empty_cluster_after(0);
 }
 
-int set_cluster_end_of_file(cluster_t cluster) {
+int set_next_cluster(cluster_t cluster, cluster_t next) {
 	if (cluster == END_OF_FILE) {
 		return 1;
 	}
 	lseek(image, sizeof(cluster_t) * cluster, SEEK_SET);
-	cluster_t tmp = END_OF_FILE;
+	cluster_t tmp = next;
 	write(image, &tmp, sizeof(cluster_t));
 	return 0;	
 }
 
+int set_cluster_end_of_file(cluster_t cluster) {
+	return set_next_cluster(cluster, END_OF_FILE);
+}
+
+int free_cluster(cluster_t cluster) {
+	return set_next_cluster(cluster, 0);
+}
+
 cluster_t extend(cluster_t cluster) {
-	printf("Extending cluster %d\n", cluster);
+	//printf("Extending cluster %d\n", cluster);
 	cluster_t next = find_empty_cluster_after(cluster);
 	lseek(image, sizeof(cluster_t) * cluster, SEEK_SET);
 	write(image, &next, sizeof(next));
@@ -129,8 +137,8 @@ int get_file_entry_from_cluster(const char *name, cluster_t cluster, file_entry 
 }
 
 int get_file_entry(const char *path, file_entry *file) {
-	printf("Get file entry\n");
-	printf("Path: %s\n", path);
+	//printf("Get file entry\n");
+	//printf("Path: %s\n", path);
 	if (strcmp(path, "") == 0) {
 		file_entry root;
 		root.cluster = 0;
@@ -139,14 +147,14 @@ int get_file_entry(const char *path, file_entry *file) {
 		return 0;
 	}
 	file_entry tmp;
-	printf("Folder path: %s\n", extract_folder(path));
+	//printf("Folder path: %s\n", extract_folder(path));
 	if (get_file_entry(extract_folder(path), &tmp) != 0) {
-		printf("Folder is not found\n");
+		//printf("Folder is not found\n");
 		return 1;
 	}
 	printf("File name: %s\n", extract_filename(path));
 	if (get_file_entry_from_cluster(extract_filename(path), tmp.cluster, file) != 0) {
-		printf("File is not found\n");
+		//printf("File is not found\n");
 		return 1;
 	}
 	return 0;
@@ -196,7 +204,7 @@ int fat_getattr(const char *path, struct stat *stat) {
 }
 
 int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *info) {
-	printf("Start readdir: %s\n", path);
+	//printf("Start readdir: %s\n", path);
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
@@ -217,12 +225,12 @@ int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 			if (strlen(tmp.name) != 0) {
 				//memcpy(filename, tmp.name, NAME_LENGTH);
 				filler(buf, (char*)tmp.name, NULL, 0);
-				printf("Current name: %s\n", tmp.name);
+				//printf("Current name: %s\n", tmp.name);
 			} 
 		}
 		cluster = get_next_cluster(cluster);
 	} while (cluster != END_OF_FILE);
-	printf("Finish readdir: %s\n", path);
+	//printf("Finish readdir: %s\n", path);
 	return 0;
 }
 
@@ -256,24 +264,24 @@ int fat_mkdir(const char *path, mode_t mode) {
 	file_entry file;
 
 	if (get_file_entry(extract_folder(path), &file) != 0) {
-		printf("Recursive mkdir\n");
+		//printf("Recursive mkdir\n");
 		fat_mkdir(extract_folder(path), mode);
 	}
-	printf("Start mkdir\n");
+	//printf("Start mkdir\n");
 	strncpy(file.name, extract_filename(path), NAME_LENGTH);
-	printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
+	//printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
 	file.mode = mode | S_IFDIR;
 	time(&file.created);
 	file.size = 0;
 	file.cluster = find_empty_cluster();
 	set_cluster_end_of_file(file.cluster);
-	printf("Cluster: %d\n", file.cluster);
+	//printf("Cluster: %d\n", file.cluster);
 	off_t offset = find_empty_file_entry_offset(extract_folder(path));
-	printf("Offset: %lld\n", offset);
+	//printf("Offset: %lld\n", offset);
 	lseek(image, offset, SEEK_SET);
-	int t = write(image, &file, sizeof(file_entry));
-	printf("Write: %d\n", t);
-	printf("Finish mkdir\n");
+	write(image, &file, sizeof(file_entry));
+	//printf("Write: %d\n", t);
+	//printf("Finish mkdir\n");
 	return 0; 
 }
 
@@ -281,34 +289,77 @@ int fat_create(const char *path, mode_t mode, struct fuse_file_info *info) {
 	file_entry file;
 
 	if (get_file_entry(extract_folder(path), &file) != 0) {
-		printf("Creating folder\n");
+		//printf("Creating folder\n");
 		fat_mkdir(extract_folder(path), mode);
 	}
-	printf("Start mkdir\n");
+	//printf("Start mkdir\n");
 	strncpy(file.name, extract_filename(path), NAME_LENGTH);
-	printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
+	//printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
 	file.mode = mode | S_IFREG;
 	time(&file.created);
 	file.size = 0;
 	file.cluster = find_empty_cluster();
 	set_cluster_end_of_file(file.cluster);
-	printf("Cluster: %d\n", file.cluster);
+	//printf("Cluster: %d\n", file.cluster);
 	off_t offset = find_empty_file_entry_offset(extract_folder(path));
-	printf("Offset: %lld\n", offset);
+	//printf("Offset: %lld\n", offset);
 	lseek(image, offset, SEEK_SET);
-	int t = write(image, &file, sizeof(file_entry));
-	printf("Write: %d\n", t);
-	printf("Finish create\n");
+	write(image, &file, sizeof(file_entry));
+	//printf("Write: %d\n", t);
+	//printf("Finish create\n");
 	return 0;
 }
 
-static struct fuse_operations fat_oper = {
+int fat_unlink(const char* path) {
+	printf("Start removing file\n");
+	file_entry file;
+	if (get_file_entry(path, &file) != 0) {
+		return -ENOENT;
+		printf("File not found\n");
+	} 
+	file_entry folder;
+	get_file_entry(extract_folder(path), &folder);
+	cluster_t folder_cluster = folder.cluster;
+	cluster_t file_cluster = file.cluster;
+	printf("Folder cluster: %d\n", folder_cluster);
+	printf("File cluster: %d\n", file_cluster);
+	file_entry tmp;
+	do {
+		off_t offset = data_offset + folder_cluster * CLUSTER_SIZE; 
+		lseek(image, offset, SEEK_SET);
+		int i;
+		for (i = 0; i<entries_count; i++) {
+			read(image, &tmp, sizeof(file_entry));
+			if (strcmp((char*)tmp.name, extract_filename(path)) == 0) {
+				printf("File is found\n");
+				file_entry buf;
+				memset(&buf, 0, sizeof(file_entry));
+				lseek(image, offset, SEEK_SET);
+				write(image, &buf, sizeof(file_entry));
+				cluster_t next;
+				do { 
+					next = get_next_cluster(file_cluster);
+					free_cluster(file_cluster);
+					printf("Next cluster: %d\n", next);
+				} while(next != END_OF_FILE);
+				printf("Finish removing file\n");
+				return 0;
+			} 
+			offset += sizeof(file_entry);
+		}
+		folder_cluster = get_next_cluster(folder_cluster);
+	} while (folder_cluster != END_OF_FILE);
+	return 0;
+}
+
+struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
     .read       = fat_read,
     .open 		= fat_open,
     .mkdir  	= fat_mkdir,
-    .create     = fat_create
+    .create     = fat_create,
+    .unlink     = fat_unlink
 };
 
 int main(int argc, char *argv[]) {
