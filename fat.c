@@ -196,7 +196,7 @@ int fat_getattr(const char *path, struct stat *stat) {
 }
 
 int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *info) {
-
+	printf("Start readdir: %s\n", path);
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 
@@ -211,7 +211,7 @@ int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 	//char *filename = malloc(NAME_LENGTH);
 
 	do {
-		lseek(image, data_offset, SEEK_SET);
+		lseek(image, data_offset + cluster * CLUSTER_SIZE, SEEK_SET);
 		for (i = 0; i<entries_count; i++) {
 			read(image, &tmp, sizeof(file_entry));
 			if (strlen(tmp.name) != 0) {
@@ -222,6 +222,7 @@ int fat_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
 		}
 		cluster = get_next_cluster(cluster);
 	} while (cluster != END_OF_FILE);
+	printf("Finish readdir: %s\n", path);
 	return 0;
 }
 
