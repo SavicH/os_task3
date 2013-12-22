@@ -277,12 +277,38 @@ int fat_mkdir(const char *path, mode_t mode) {
 	return 0; 
 }
 
+int fat_create(const char *path, mode_t mode, struct fuse_file_info *info) {
+	file_entry file;
+
+	if (get_file_entry(extract_folder(path), &file) != 0) {
+		printf("Creating folder\n");
+		fat_mkdir(extract_folder(path), mode);
+	}
+	printf("Start mkdir\n");
+	strncpy(file.name, extract_filename(path), NAME_LENGTH);
+	printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
+	file.mode = mode | S_IFREG;
+	time(&file.created);
+	file.size = 0;
+	file.cluster = find_empty_cluster();
+	set_cluster_end_of_file(file.cluster);
+	printf("Cluster: %d\n", file.cluster);
+	off_t offset = find_empty_file_entry_offset(extract_folder(path));
+	printf("Offset: %lld\n", offset);
+	lseek(image, offset, SEEK_SET);
+	int t = write(image, &file, sizeof(file_entry));
+	printf("Write: %d\n", t);
+	printf("Finish create\n");
+	return 0;
+}
+
 static struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
     .read       = fat_read,
     .open 		= fat_open,
-    .mkdir  = fat_mkdir
+    .mkdir  	= fat_mkdir,
+    .create     = fat_create
 };
 
 int main(int argc, char *argv[]) {
