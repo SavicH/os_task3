@@ -38,6 +38,10 @@ int image;
 off_t data_offset;
 int entries_count;
 
+int is_folder(file_entry file) {
+	return file.mode & S_IFDIR;
+}
+
 cluster_t get_next_cluster(cluster_t cluster) {
 	lseek(image, sizeof(cluster_t) * cluster, SEEK_SET);
 	cluster_t next;
@@ -119,6 +123,18 @@ char* extract_filename(const char *path) {
 	strcpy(result, path + i + 1);
 	//printf("Name: %s %d\n", result, strlen(result));
 	return result;
+}
+
+
+char* get_path(const char *folder_path, char *filename) {
+	int n = strlen(folder_path);
+	int m = strlen(filename);
+	char *path = (char*)malloc(n + m + 3);
+	strncpy(path, folder_path, n);
+	path[n] = '/';
+	memcpy(path + n + 1, filename, m);
+	printf("Path: %s\n", path);
+	return path;
 }
 
 int get_file_entry_from_cluster(const char *name, cluster_t cluster, file_entry *file) {
@@ -310,6 +326,16 @@ int fat_create(const char *path, mode_t mode, struct fuse_file_info *info) {
 	return 0;
 }
 
+void free_all_file_clusters(file_entry file) {
+	cluster_t file_cluster = file.cluster;
+	cluster_t next;
+	do { 
+		next = get_next_cluster(file_cluster);
+		free_cluster(file_cluster);
+		printf("Next cluster: %d\n", next);
+	} while(next != END_OF_FILE);
+}
+
 int fat_unlink(const char* path) {
 	printf("Start removing file\n");
 	file_entry file;
@@ -320,9 +346,8 @@ int fat_unlink(const char* path) {
 	file_entry folder;
 	get_file_entry(extract_folder(path), &folder);
 	cluster_t folder_cluster = folder.cluster;
-	cluster_t file_cluster = file.cluster;
 	printf("Folder cluster: %d\n", folder_cluster);
-	printf("File cluster: %d\n", file_cluster);
+	printf("File cluster: %d\n", file.cluster);
 	file_entry tmp;
 	do {
 		off_t offset = data_offset + folder_cluster * CLUSTER_SIZE; 
@@ -336,12 +361,7 @@ int fat_unlink(const char* path) {
 				memset(&buf, 0, sizeof(file_entry));
 				lseek(image, offset, SEEK_SET);
 				write(image, &buf, sizeof(file_entry));
-				cluster_t next;
-				do { 
-					next = get_next_cluster(file_cluster);
-					free_cluster(file_cluster);
-					printf("Next cluster: %d\n", next);
-				} while(next != END_OF_FILE);
+				free_all_file_clusters(file);
 				printf("Finish removing file\n");
 				return 0;
 			} 
@@ -352,6 +372,59 @@ int fat_unlink(const char* path) {
 	return 0;
 }
 
+int fat_rmdir(const char *path) {
+	printf("Start removing folder\n");
+	file_entry folder;
+	if (get_file_entry(path, &folder) != 0) {
+		return -ENOENT;
+		printf("Folder not found\n");
+	} 
+	file_entry root;
+	get_file_entry(extract_folder(path), &root);
+	cluster_t root_cluster = root.cluster;
+	printf("Root cluster: %d\n", root_cluster);
+	printf("Folder cluster: %d\n", folder.cluster);
+	file_entry tmp;
+	file_entry buf;
+	memset(&buf, 0, sizeof(file_entry));
+	do {
+		off_t offset = data_offset + root_cluster * CLUSTER_SIZE; 
+		lseek(image, offset, SEEK_SET);
+		int i;
+		for (i = 0; i<entries_count; i++) {
+			read(image, &tmp, sizeof(file_entry));
+			if (strcmp((char*)tmp.name, extract_filename(path)) == 0) {
+				printf("Folder is here\n");
+				lseek(image, offset, SEEK_SET);
+				write(image, &buf, sizeof(file_entry));
+				cluster_t folder_cluster = folder.cluster;
+				do {
+					lseek(image, data_offset + folder_cluster * CLUSTER_SIZE, SEEK_SET);	
+					int j;
+					for (j = 0; j < entries_count; j++) {
+						read(image, &tmp, sizeof(file_entry));
+						if (strlen(tmp.name) != 0) {
+							const char *file_path = get_path(path, (char*)tmp.name);
+							if (is_folder(tmp)) {
+								fat_rmdir(file_path);
+							} else {
+								fat_unlink(file_path);
+							}
+						}
+					}
+					folder_cluster = get_next_cluster(folder_cluster);
+				} while(folder_cluster != END_OF_FILE);
+				free_all_file_clusters(folder);
+				printf("Finish removing folder\n");
+				return 0;
+			} 
+			offset += sizeof(file_entry);
+		}
+		root_cluster = get_next_cluster(root_cluster);
+	} while (root_cluster != END_OF_FILE);
+	return 0;
+}
+
 struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
@@ -359,7 +432,8 @@ struct fuse_operations fat_oper = {
     .open 		= fat_open,
     .mkdir  	= fat_mkdir,
     .create     = fat_create,
-    .unlink     = fat_unlink
+    .unlink     = fat_unlink,
+    .rmdir		= fat_rmdir
 };
 
 int main(int argc, char *argv[]) {
