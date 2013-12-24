@@ -82,6 +82,17 @@ int free_cluster(cluster_t cluster) {
 	return set_next_cluster(cluster, 0);
 }
 
+cluster_t get_cluster_by_offset(cluster_t start, off_t offset) {
+	int n = offset / CLUSTER_SIZE;
+	int i = 0;
+	cluster_t tmp = start;
+	while (i != n) {
+		tmp = get_next_cluster(tmp);
+		++i;
+	}
+	return tmp;
+}
+
 cluster_t extend(cluster_t cluster) {
 	//printf("Extending cluster %d\n", cluster);
 	cluster_t next = find_empty_cluster_after(cluster);
@@ -265,12 +276,13 @@ int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct 
 		return -ENOENT;
 	}
 	if (offset < file.size) {
+		cluster_t cluster = get_cluster_by_offset(file.cluster, offset);
 		if (offset + buf_size > file.size) {
 			size = file.size - offset;
 		} else {
 			size = buf_size;
 		}
-		lseek(image, data_offset + file.cluster * CLUSTER_SIZE, SEEK_SET);
+		lseek(image, data_offset + cluster * CLUSTER_SIZE, SEEK_SET);
 		read(image, buf, size);
 	}
 	return size;
