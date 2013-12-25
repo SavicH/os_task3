@@ -136,7 +136,6 @@ char* extract_filename(const char *path) {
 	return result;
 }
 
-
 char* get_path(const char *folder_path, char *filename) {
 	int n = strlen(folder_path);
 	int m = strlen(filename);
@@ -524,6 +523,29 @@ int fat_rename (const char* old_path, const char* new_path) {
 	return 0;
 }
 
+int fat_truncate(const char *path, off_t size) {
+	file_entry file;
+	if (get_file_entry(path, &file) != 0) {
+		return -ENOENT;
+	}
+	edit_file_entry_size(path, size);
+	cluster_t cluster = file.cluster;
+	for (int i = 0; i <= size / CLUSTER_SIZE; ++i)
+	{
+		if (cluster == END_OF_FILE) {
+			cluster = extend(cluster);
+		} else {
+			cluster = get_next_cluster(cluster);
+		}
+	}
+	if (cluster != END_OF_FILE) {
+		cluster_t next = get_next_cluster(cluster);
+		free_cluster(cluster);
+		cluster = next;
+	}
+	return 0;
+}
+
 struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
@@ -533,7 +555,8 @@ struct fuse_operations fat_oper = {
     .create     = fat_create,
     .unlink     = fat_unlink,
     .rmdir		= fat_rmdir,
-    .rename 	= fat_rename
+    .rename 	= fat_rename,
+    .truncate 	= fat_truncate
 };
 
 int main(int argc, char *argv[]) {
