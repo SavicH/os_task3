@@ -22,8 +22,6 @@
 #define END_OF_FILE 0xFFFFFFFF
 #define EMPTY 0x00000000
 
-#define SIZE 0
-
 typedef unsigned int cluster_t;
 
 struct file_entry_s {
@@ -243,6 +241,30 @@ off_t find_empty_file_entry_offset(const char *path) {
 		cluster = get_next_cluster(cluster);
 	} while (cluster != END_OF_FILE);
 	return sizeof(cluster_t) * extend(tmp);	
+}
+
+int edit_file_entry_size(const char* path, size_t size) {
+	file_entry file;
+	if (get_file_entry(path, &file) != 0) {
+		return 1;
+	}
+	off_t offset = get_file_entry_offset(path);
+	file.size = size;
+	lseek(image, offset, SEEK_SET);
+	write(image, &file, sizeof(file));
+	return 0;
+}
+
+int edit_file_entry_name(const char* path, char *name) {
+	file_entry file;
+	if (get_file_entry(path, &file) != 0) {
+		return 1;
+	}
+	off_t offset = get_file_entry_offset(path);
+	memcpy(file.name, name, NAME_LENGTH);
+	lseek(image, offset, SEEK_SET);
+	write(image, &file, sizeof(file));
+	return 0;
 }
 
 int fat_getattr(const char *path, struct stat *stat) {
@@ -478,6 +500,30 @@ int fat_rmdir(const char *path) {
 	return 0;
 }
 
+int fat_rename (const char* old_path, const char* new_path) {
+	file_entry new_folder;
+	file_entry file;
+	if (get_file_entry(extract_folder(new_path), &new_folder) != 0) {
+		return -ENOENT;
+	}
+	if (get_file_entry(old_path, &file) != 0) {
+		return -ENOENT;
+	}
+	edit_file_entry_name(old_path, extract_filename(new_path));
+		
+	if (strcmp(extract_folder(old_path), extract_folder(new_path)) != 0) {
+		file_entry tmp;
+		memset(&tmp, 0, sizeof(file_entry));
+		off_t offset = get_file_entry_offset(old_path);
+		lseek(image, offset, SEEK_SET);
+		write(image, &tmp, sizeof(file_entry));
+		offset = find_empty_file_entry_offset(new_path);
+		lseek(image, offset, SEEK_SET);
+		write(image, &file, SEEK_SET);
+	}
+	return 0;
+}
+
 struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
@@ -486,7 +532,8 @@ struct fuse_operations fat_oper = {
     .mkdir  	= fat_mkdir,
     .create     = fat_create,
     .unlink     = fat_unlink,
-    .rmdir		= fat_rmdir
+    .rmdir		= fat_rmdir,
+    .rename 	= fat_rename
 };
 
 int main(int argc, char *argv[]) {
