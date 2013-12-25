@@ -22,6 +22,8 @@
 #define END_OF_FILE 0xFFFFFFFF
 #define EMPTY 0x00000000
 
+#define SIZE 0
+
 typedef unsigned int cluster_t;
 
 struct file_entry_s {
@@ -93,6 +95,8 @@ cluster_t get_cluster_by_offset(cluster_t start, off_t offset) {
 	return tmp;
 }
 
+
+
 cluster_t extend(cluster_t cluster) {
 	//printf("Extending cluster %d\n", cluster);
 	cluster_t next = find_empty_cluster_after(cluster);
@@ -149,17 +153,24 @@ char* get_path(const char *folder_path, char *filename) {
 }
 
 int get_file_entry_from_cluster(const char *name, cluster_t cluster, file_entry *file) {
-	//printf("cluster %d\n", cluster);
-	lseek(image, data_offset + cluster * CLUSTER_SIZE, SEEK_SET);
+	//printf("Start get_file_entry\n");
 	int i;
 	file_entry tmp;
-	for (i = 0; i<entries_count; i++) {
-		read(image, &tmp, sizeof(file_entry));
-		if (strcmp(name, (char*)tmp.name) == 0) {
-			*file = tmp;
-			return 0;	
+	while (cluster != END_OF_FILE) {
+		//printf("cluster: %d\n", cluster);
+		lseek(image, data_offset + cluster * CLUSTER_SIZE, SEEK_SET);
+		for (i = 0; i<entries_count; i++) {
+			read(image, &tmp, sizeof(file_entry));
+			//printf("file name: %s\n", (char*)tmp.name);
+			if (strcmp(name, (char*)tmp.name) == 0) {
+				*file = tmp;
+				//printf("Finish get_file_entry 0\n");
+				return 0;	
+			}
 		}
+		cluster = get_next_cluster(cluster);
 	}
+	//printf("Finish get_file_entry 0\n");
 	return 1;
 }
 
@@ -278,37 +289,20 @@ int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct 
 		return -ENOENT;
 	}
 	if (offset < file.size) {
-		if (offset + buf_size > file.size) {
-			size = file.size - offset;
-		} else {
-			size = buf_size;
-		}
-		size_t sum = 0;
 		cluster = get_cluster_by_offset(file.cluster, offset);
-		char *tmp = (char*)malloc(CLUSTER_SIZE);
-		size_t current = 0;
-		printf("size %d\n", size);
-		while (sum < size) {
-			printf("cluster: %d; sum: %d\n", cluster, sum);
-			cluster_offset = offset % CLUSTER_SIZE;
-			if (sum + CLUSTER_SIZE < size) {
-				current = CLUSTER_SIZE - cluster_offset;
+		cluster_offset = offset % CLUSTER_SIZE;
+		if (cluster_offset + buf_size > CLUSTER_SIZE) {
+			size = CLUSTER_SIZE - cluster_offset;
+		} else {
+			if (offset + buf_size > file.size){
+				size = file.size - offset;
 			} else {
-				current = size - sum - cluster_offset;
+				size = buf_size;
 			}
-			printf("cluster_offset: %lld; current: %d\n", cluster_offset, current); 
-			lseek(image, data_offset + cluster * CLUSTER_SIZE + cluster_offset, SEEK_SET);
-			read(image, tmp, current);
-			memcpy(buf + sum, tmp, current);
-			offset += current;
-			sum += current;
-			cluster = get_next_cluster(cluster);
 		}
-		free(tmp);
+		lseek(image, data_offset + cluster * CLUSTER_SIZE + cluster_offset, SEEK_SET);
+		read(image, buf, size);
 	}
-	//printf("Read %s; file_size: %d; offset: %lld; buf_size: %d; size: %d; cluster: %d; cluster_offset: %lld\n",
-		//path, file.size, offset, buf_size, size, cluster, cluster_offset);
-	//printf("wtf: %lld\n", offset % CLUSTER_SIZE);
 	return size;
 } 
 
