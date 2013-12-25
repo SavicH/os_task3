@@ -198,16 +198,41 @@ int get_file_entry(const char *path, file_entry *file) {
 	return 0;
 }
 
-off_t find_empty_file_entry_offset(const char *path) {
+off_t find_file_entry_offset(const char *path) {
 	file_entry folder;
-	get_file_entry(path, &folder);
+	get_file_entry(extract_folder(path), &folder);
 	cluster_t cluster = folder.cluster;
-	off_t offset = data_offset + CLUSTER_SIZE * cluster;
 
 	int i;
 	file_entry buf;
 	cluster_t tmp;
 	do {
+		off_t offset = data_offset + CLUSTER_SIZE * cluster;
+		lseek(image, offset, SEEK_SET);
+		for (i = 0; i<entries_count; i++) {
+			read(image, &buf, sizeof(file_entry));
+			if (strcmp((char*)buf.name, extract_filename(path)) == 0) {
+				return offset;
+			} 
+			offset += sizeof(file_entry);
+		}
+		tmp = cluster;
+		cluster = get_next_cluster(cluster);
+	} while (cluster != END_OF_FILE);
+	return sizeof(cluster_t) * extend(tmp);	
+}
+
+
+off_t find_empty_file_entry_offset(const char *path) {
+	file_entry folder;
+	get_file_entry(path, &folder);
+	cluster_t cluster = folder.cluster;
+	
+	int i;
+	file_entry buf;
+	cluster_t tmp;
+	do {
+		off_t offset = data_offset + CLUSTER_SIZE * cluster;
 		lseek(image, offset, SEEK_SET);
 		for (i = 0; i<entries_count; i++) {
 			read(image, &buf, sizeof(file_entry));
