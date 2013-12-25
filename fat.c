@@ -95,8 +95,6 @@ cluster_t get_cluster_by_offset(cluster_t start, off_t offset) {
 	return tmp;
 }
 
-
-
 cluster_t extend(cluster_t cluster) {
 	//printf("Extending cluster %d\n", cluster);
 	cluster_t next = find_empty_cluster_after(cluster);
@@ -198,7 +196,7 @@ int get_file_entry(const char *path, file_entry *file) {
 	return 0;
 }
 
-off_t find_file_entry_offset(const char *path) {
+off_t get_file_entry_offset(const char *path) {
 	file_entry folder;
 	get_file_entry(extract_folder(path), &folder);
 	cluster_t cluster = folder.cluster;
@@ -219,7 +217,7 @@ off_t find_file_entry_offset(const char *path) {
 		tmp = cluster;
 		cluster = get_next_cluster(cluster);
 	} while (cluster != END_OF_FILE);
-	return sizeof(cluster_t) * extend(tmp);	
+	return -1;	
 }
 
 
