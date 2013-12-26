@@ -325,29 +325,45 @@ int fat_open (const char *path, struct fuse_file_info *info) {
 }
 
 int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct fuse_file_info *info) {
-	file_entry file;
-	cluster_t cluster = 0;
-	off_t cluster_offset = 0;
-	size_t size = 0;
-	if (get_file_entry(path, &file) != 0) {
-		return -ENOENT;
-	}
-	if (offset < file.size) {
-		cluster = get_cluster_by_offset(file.cluster, offset);
-		cluster_offset = offset % CLUSTER_SIZE;
-		if (cluster_offset + buf_size > CLUSTER_SIZE) {
-			size = CLUSTER_SIZE - cluster_offset;
-		} else {
-			if (offset + buf_size > file.size){
-				size = file.size - offset;
-			} else {
-				size = buf_size;
-			}
-		}
-		lseek(image, data_offset + cluster * CLUSTER_SIZE + cluster_offset, SEEK_SET);
-		read(image, buf, size);
-	}
-	return size;
+    printf("Start file read; path: %s; offset: %lld\n", path, offset);
+    file_entry file;
+    cluster_t cluster = 0;
+    off_t cluster_offset = 0;
+    size_t size = 0;
+    if (get_file_entry(path, &file) != 0) {
+        return -ENOENT;
+    }
+    if (offset < file.size) {
+        if (offset + buf_size > file.size) {
+            size = file.size - offset;
+        } else {
+            size = buf_size;
+        }
+        size_t sum = 0;
+        cluster = get_cluster_by_offset(file.cluster, offset);
+        char *tmp = (char*)malloc(CLUSTER_SIZE);
+        size_t current = 0;
+        printf("size %d\n", size);
+        while (sum < size) {
+            printf("cluster: %d; sum: %d\n", cluster, sum);
+            cluster_offset = offset % CLUSTER_SIZE;
+            if (sum + CLUSTER_SIZE < size) {
+                current = CLUSTER_SIZE - cluster_offset;
+            } else {
+                current = size - sum - cluster_offset;
+            }
+            printf("cluster_offset: %lld; current: %d\n", cluster_offset, current);
+            lseek(image, data_offset + cluster * CLUSTER_SIZE + cluster_offset, SEEK_SET);
+            read(image, tmp, current);
+            memcpy(buf + sum, tmp, current);
+            offset += current;
+            sum += current;
+            cluster = get_next_cluster(cluster);
+        }
+        free(tmp);
+    }
+    printf("Start file read; path: %s\n", path);
+	return size;        
 } 
 
 int fat_mkdir(const char *path, mode_t mode) {
@@ -524,26 +540,73 @@ int fat_rename (const char* old_path, const char* new_path) {
 }
 
 int fat_truncate(const char *path, off_t size) {
+	printf("Start file truncate; path: %s; size: %lld\n", path, size);
 	file_entry file;
 	if (get_file_entry(path, &file) != 0) {
 		return -ENOENT;
 	}
 	edit_file_entry_size(path, size);
 	cluster_t cluster = file.cluster;
-	for (int i = 0; i <= size / CLUSTER_SIZE; ++i)
+	for (int i = 0; i < size / CLUSTER_SIZE; ++i)
 	{
+		printf("current cluster: %d\n", cluster);
 		if (cluster == END_OF_FILE) {
+			printf("extend!\n");
 			cluster = extend(cluster);
 		} else {
 			cluster = get_next_cluster(cluster);
 		}
 	}
-	if (cluster != END_OF_FILE) {
+	while (cluster != END_OF_FILE) {
+		printf("reduce!\n");
 		cluster_t next = get_next_cluster(cluster);
 		free_cluster(cluster);
 		cluster = next;
 	}
+	printf("finish file truncate; path: %s\n", path);
 	return 0;
+}
+
+int fat_write(const char* path, const char *buf, size_t buf_size, off_t offset, struct fuse_file_info* fi) {
+    printf("Start file write; path: %s; offset: %lld\n", path, offset);
+    file_entry file;
+    cluster_t cluster = 0;
+    off_t cluster_offset = 0;
+    size_t size = 0;
+    if (get_file_entry(path, &file) != 0) {
+        return -ENOENT;
+    }
+    if (offset < file.size) {
+        if (offset + buf_size > file.size) {
+            size = file.size - offset;
+        } else {
+            size = buf_size;
+        }
+        size_t sum = 0;
+        cluster = get_cluster_by_offset(file.cluster, offset);
+        char *tmp = (char*)malloc(CLUSTER_SIZE);
+        size_t current = 0;
+        printf("size %d\n", size);
+        while (sum < size) {
+            printf("cluster: %d; sum: %d\n", cluster, sum);
+            cluster_offset = offset % CLUSTER_SIZE;
+            if (sum + CLUSTER_SIZE < size) {
+                current = CLUSTER_SIZE - cluster_offset;
+            } else {
+                current = size - sum - cluster_offset;
+            }
+            printf("cluster_offset: %lld; current: %d\n", cluster_offset, current);
+            lseek(image, data_offset + cluster * CLUSTER_SIZE + cluster_offset, SEEK_SET);
+            memcpy(tmp, buf + sum, current);
+            write(image, tmp, current);
+            offset += current;
+            sum += current;
+            cluster = get_next_cluster(cluster);
+        }
+        free(tmp);
+    }
+    printf("Finish file write; path: %s\n", path);
+	return size;
 }
 
 struct fuse_operations fat_oper = {
@@ -556,7 +619,8 @@ struct fuse_operations fat_oper = {
     .unlink     = fat_unlink,
     .rmdir		= fat_rmdir,
     .rename 	= fat_rename,
-    .truncate 	= fat_truncate
+    .truncate 	= fat_truncate,
+    .write      = fat_write
 };
 
 int main(int argc, char *argv[]) {
