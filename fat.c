@@ -399,6 +399,7 @@ void free_all_file_clusters(file_entry file) {
 	do { 
 		next = get_next_cluster(file_cluster);
 		free_cluster(file_cluster);
+		file_cluster = next;
 		printf("Next cluster: %d\n", next);
 	} while(next != END_OF_FILE);
 }
@@ -597,6 +598,19 @@ int fat_write(const char* path, const char *buf, size_t buf_size, off_t offset, 
 	return size;
 }
 
+int fat_symlink(const char* to, const char* from) {
+	mode_t mode = 0777;
+	if (create_file(from, mode | S_IFLNK) != 0) {
+		return -ENOENT;
+	}
+	fat_write(from, to, strlen(to), 0, NULL);
+	return 0;
+}
+
+int fat_readlink(const char* path, char* buf, size_t size) {
+	return fat_read(path, buf, size, 0, NULL) ? 0 : 1;
+}
+
 struct fuse_operations fat_oper = {
     .getattr    = fat_getattr,
     .readdir    = fat_readdir,
@@ -608,7 +622,9 @@ struct fuse_operations fat_oper = {
     .rmdir		= fat_rmdir,
     .rename 	= fat_rename,
     .truncate 	= fat_truncate,
-    .write      = fat_write
+    .write      = fat_write,
+    .symlink	= fat_symlink,
+    .readlink	= fat_readlink
 };
 
 int main(int argc, char *argv[]) {
