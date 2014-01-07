@@ -366,54 +366,31 @@ int fat_read(const char *path, char *buf, size_t buf_size, off_t offset, struct 
 	return size;        
 } 
 
-int fat_mkdir(const char *path, mode_t mode) {
+int create_file(const char *path, mode_t mode) {
 	file_entry file;
 
 	if (get_file_entry(extract_folder(path), &file) != 0) {
-		//printf("Recursive mkdir\n");
-		fat_mkdir(extract_folder(path), mode);
+		//fat_mkdir(extract_folder(path), mode);
+		return -ENOENT;
 	}
-	//printf("Start mkdir\n");
 	strncpy(file.name, extract_filename(path), NAME_LENGTH);
-	//printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
-	file.mode = mode | S_IFDIR;
+	file.mode = mode;
 	time(&file.created);
 	file.size = 0;
 	file.cluster = find_empty_cluster();
 	set_cluster_end_of_file(file.cluster);
-	//printf("Cluster: %d\n", file.cluster);
 	off_t offset = find_empty_file_entry_offset(extract_folder(path));
-	//printf("Offset: %lld\n", offset);
 	lseek(image, offset, SEEK_SET);
 	write(image, &file, sizeof(file_entry));
-	//printf("Write: %d\n", t);
-	//printf("Finish mkdir\n");
 	return 0; 
 }
 
-int fat_create(const char *path, mode_t mode, struct fuse_file_info *info) {
-	file_entry file;
+int fat_mkdir(const char *path, mode_t mode) {
+	return create_file(path, mode | S_IFDIR);
+}
 
-	if (get_file_entry(extract_folder(path), &file) != 0) {
-		//printf("Creating folder\n");
-		fat_mkdir(extract_folder(path), mode);
-	}
-	//printf("Start mkdir\n");
-	strncpy(file.name, extract_filename(path), NAME_LENGTH);
-	//printf("Folder name: %s, length: %d\n", file.name, strlen(file.name));
-	file.mode = mode | S_IFREG;
-	time(&file.created);
-	file.size = 0;
-	file.cluster = find_empty_cluster();
-	set_cluster_end_of_file(file.cluster);
-	//printf("Cluster: %d\n", file.cluster);
-	off_t offset = find_empty_file_entry_offset(extract_folder(path));
-	//printf("Offset: %lld\n", offset);
-	lseek(image, offset, SEEK_SET);
-	write(image, &file, sizeof(file_entry));
-	//printf("Write: %d\n", t);
-	//printf("Finish create\n");
-	return 0;
+int fat_create(const char *path, mode_t mode, struct fuse_file_info *info) {
+	return create_file(path, mode | S_IFREG);
 }
 
 void free_all_file_clusters(file_entry file) {
