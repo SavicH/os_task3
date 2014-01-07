@@ -532,50 +532,33 @@ int fat_truncate(const char *path, off_t size) {
 	if (get_file_entry(path, &file) != 0) {
 		return -ENOENT;
 	}
-	int current_count = get_cluster_count(file);
+	int current_count = file.size / CLUSTER_SIZE + 1;
 	int new_count = size / CLUSTER_SIZE  + 1;
 	printf("current: %d; new: %d; file cluster: %d\n", current_count, new_count, file.cluster);
 	edit_file_entry_size(path, size);
 	cluster_t cluster = file.cluster;
 	int i;
-	if (new_count != current_count) {
-		free_all_file_clusters(file);
-		for (i = 0; i<new_count; i++) {
+	if (new_count > current_count) {
+		for (i = 0; i<current_count; i++) {
+			cluster = get_next_cluster(cluster);
+		}
+		for (i = current_count; i<new_count; i++) {
 			cluster = extend(cluster);
 		}
+	} else {
+		for (i = 0; i<new_count; i++) {
+			cluster = get_next_cluster(cluster);
+		}
+		for (i = new_count; i<new_count; i++) {
+			cluster_t next = get_next_cluster(cluster);
+			free_cluster(cluster);
+			cluster = next;
+		}
 	}
-	// cluster_t next;
-	// int i;
-	// if (new_count < current_count) {
-	// 	printf("reduce!\n");
-	// 	for(int i = 0; i<new_count - 1; i++) {
-	// 		cluster = get_next_cluster(cluster);
-
-	// 	}
-	// 	while (cluster != END_OF_FILE) {
-	// 		cluster_t next = get_next_cluster(cluster);
-	// 		free_cluster(cluster);
-	// 		cluster = next;
-	// 	}
-	// }
-	// if (new_count > current_count) {
-	// 	printf("extend!\n");
-	// }
-
-	// for (int i = 0; i < size / CLUSTER_SIZE; ++i)
-	// {
-	// 	printf("current cluster: %d\n", cluster);
-	// 	if (cluster == END_OF_FILE) {
-			
-	// 		cluster = extend(cluster);
-	// 	} else {
-	// 		cluster = get_next_cluster(cluster);
-	// 	}
-	// }
-
 	printf("finish file truncate; path: %s\n", path);
 	return 0;
 }
+
 
 int fat_write(const char* path, const char *buf, size_t buf_size, off_t offset, struct fuse_file_info* fi) {
     printf("Start file write; path: %s; offset: %lld, buf_size: %d\n", path, offset, buf_size);
