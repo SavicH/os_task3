@@ -94,11 +94,11 @@ cluster_t get_cluster_by_offset(cluster_t start, off_t offset) {
 }
 
 cluster_t extend(cluster_t cluster) {
-	//printf("Extending cluster %d\n", cluster);
 	cluster_t next = find_empty_cluster_after(cluster);
 	lseek(image, sizeof(cluster_t) * cluster, SEEK_SET);
 	write(image, &next, sizeof(next));
 	set_cluster_end_of_file(next);
+	printf("Extending cluster %d, result: %d\n", cluster, next);
 	return next;
 }
 
@@ -535,22 +535,28 @@ int fat_truncate(const char *path, off_t size) {
 	}
 	int current_count = file.size / CLUSTER_SIZE + 1;
 	int new_count = size / CLUSTER_SIZE  + 1;
-	printf("current: %d; new: %d; file cluster: %d\n", current_count, new_count, file.cluster);
+	printf("file truncate current: %d; new: %d; file cluster: %d\n", current_count, new_count, file.cluster);
 	edit_file_entry_size(path, size);
 	cluster_t cluster = file.cluster;
 	int i;
 	if (new_count > current_count) {
-		for (i = 0; i<current_count; i++) {
+		printf("truncate: extending\n");
+		for (i = 0; i<current_count - 1; i++) {
+			printf("truncate: cluster: %d\n", cluster);
 			cluster = get_next_cluster(cluster);
 		}
-		for (i = current_count; i<new_count; i++) {
+		for (i = current_count - 1; i<new_count; i++) {
+			printf("truncate: cluster: %d\n", cluster);
 			cluster = extend(cluster);
 		}
 	} else {
+		printf("truncate: truncating\n");
 		for (i = 0; i<new_count; i++) {
+			printf("truncate: cluster: %d\n", cluster);
 			cluster = get_next_cluster(cluster);
 		}
-		for (i = new_count; i<new_count; i++) {
+		for (i = new_count; i<current_count; i++) {
+			printf("truncate: cluster: %d\n", cluster);
 			cluster_t next = get_next_cluster(cluster);
 			free_cluster(cluster);
 			cluster = next;
